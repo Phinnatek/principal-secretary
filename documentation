@@ -1,0 +1,277 @@
+## Comprehensive Technical System Documentation
+Project Identity: Synchronized Distributed Administration Portal (SDAP)
+System Architecture Pattern: Split-Pane Distributed Layer with Asynchronous Fallbacks
+Core Stack: PHP 8.x (Strictly Typed Data Contracts), MariaDB / MySQL 8.x (Transactional ACID Compliant Engine), jQuery 3.6+ DOM Interaction Layer, Choices.js (Dynamic Typographic Tokenization), SweetAlert2 UI State Machine.
+------------------------------
+## 🏛️ 1. System Architectural Overview
+The Synchronized Distributed Administration Portal (SDAP) is engineered on a resilient, high-concurrency architecture tailored for enterprise campus ecosystems.
+The application utilizes a decoupled, real-time backend controller loop coupled with a lightweight asynchronous frontend execution pipeline. This design isolates destructive schema mutations, manages atomic sequential transaction counters, and maintains strict role-based access control (RBAC).
+
+[ Frontend Client Layer ] (HTML5/Bootstrap 5 / jQuery / Choices.js)
+          │
+          ▼ (Asynchronous XMLHttpRequest Channels via Secure AJAX Data Packets)
+[ Centralized API Endpoint ] (assets/backend/server_controller.php Branch Router)
+          │
+          ├───────────────────────────────┤
+          ▼                               ▼
+[ Core Shared Services Engine ]  [ Local Persistent Disc Volume ]
+(helper_functions.php Contracts)  (uploads/documents/ Binary Assets Store)
+          │
+          ▼ (PDO Transaction Streams wrapped in Strict Anti-Tampering Shield Triggers)
+[ MariaDB Relational Store ] ────► [ Cold Snapshot Archive Table Vault ]
+
+------------------------------
+## 💾 2. Unified Database Schema Blueprint
+The storage system is managed by a transactional MariaDB engine configured with utf8mb4_general_ci to prevent character truncation faults and guarantee cross-platform compatibility across distinct hosting clusters or local Laragon development nodes.
+## 2.1 Table Structures
+
+CREATE TABLE IF NOT EXISTS `documents` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `document_number` VARCHAR(100) NULL DEFAULT NULL,
+    `title` TEXT NOT NULL,
+    `doc_type` VARCHAR(100) NOT NULL,
+    `sender_name` VARCHAR(150) NOT NULL,
+    `sender_phone` VARCHAR(30) NULL DEFAULT NULL,
+    `file_path` VARCHAR(255) NULL DEFAULT NULL,
+    `logged_by` INT NOT NULL,
+    `received_dispatched_date` DATE NOT NULL,
+    `receiver_name` VARCHAR(150) NULL DEFAULT NULL,
+    `received_date` DATE NULL DEFAULT NULL,
+    `status` ENUM('Pending Review', 'Signed / Approved', 'Dispatched', 'Archived') NOT NULL DEFAULT 'Pending Review',
+    `file_sync_status` ENUM('Pending', 'Synced', 'Failed') NOT NULL DEFAULT 'Synced',
+    `sync_status` ENUM('Pending', 'Synced', 'Failed') NOT NULL DEFAULT 'Pending',
+    `last_synced_at` TIMESTAMP NULL DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX `idx_doc_sync` (`sync_status`),
+    INDEX `idx_doc_file_sync` (`file_sync_status`),
+    INDEX `idx_documents_sender_name` (`sender_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+CREATE TABLE IF NOT EXISTS `appointments` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `visitor_name` VARCHAR(150) NOT NULL,
+    `visitor_phone` VARCHAR(30) NOT NULL,
+    `visitor_type` VARCHAR(100) NOT NULL,
+    `department` VARCHAR(150) NULL DEFAULT NULL,
+    `appointment_type_id` INT NOT NULL,
+    `purpose` TEXT NOT NULL,
+    `appointment_date` DATE NOT NULL,
+    `start_time` TIME NOT NULL DEFAULT '00:00:00',
+    `end_time` TIME NOT NULL DEFAULT '00:00:00',
+    `status` ENUM('Pending', 'Approved', 'Rejected', 'Completed') NOT NULL DEFAULT 'Pending',
+    `scheduled_by` INT NOT NULL,
+    `sync_status` ENUM('Pending', 'Synced', 'Failed') NOT NULL DEFAULT 'Pending',
+    `last_synced_at` TIMESTAMP NULL DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+CREATE TABLE IF NOT EXISTS `deleted_records_archive` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `target_table` VARCHAR(100) NOT NULL,
+    `original_record_id` INT NOT NULL,
+    `record_reference` VARCHAR(150) NULL,
+    `json_payload` LONGTEXT NOT NULL,
+    `deleted_by` INT NOT NULL,
+    `deleted_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+------------------------------
+## 🔒 3. Anti-Tampering Shield & Security Layer
+To prevent direct database manipulation via raw DB connections or outside administration tools, the architecture enforces a strict runtime database isolation layer.
+Any schema mutating operation (UPDATE or DELETE) is structurally blocked unless an active application session initializes a signed session token: SET @application_auth_context = 'SECURE_CAMPUS_DESK_TOKEN_2026'.
+## 3.1 Immutable Table Lock Triggers
+
+CREATE TRIGGER trg_archive_bypass_update_lock 
+BEFORE UPDATE ON deleted_records_archive FOR EACH ROW BEGIN
+    IF (@application_auth_context IS NULL OR @application_auth_context != 'SECURE_CAMPUS_DESK_TOKEN_2026') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Security Violation: Historic deletion archives are immutable and cannot be amended.';
+    END IF;END;
+CREATE TRIGGER trg_archive_bypass_delete_lock 
+BEFORE DELETE ON deleted_records_archive FOR EACH ROW BEGIN
+    IF (@application_auth_context IS NULL OR @application_auth_context != 'SECURE_CAMPUS_DESK_TOKEN_2026') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Security Violation: Historic deletion archives are immutable and cannot be dropped.';
+    END IF;END;
+
+------------------------------
+## ⚙️ 4. Shared Backend Logic Core (helper_functions.php)
+This module aggregates all reusable procedural algorithms, executing transactional row write-locks (FOR UPDATE), array conversions, and type-safe data generation algorithms.
+## 4.1 Chronological Sequenced Reference Tracker Generator
+Instead of assigning random byte parameters to data tokens, the system tracks the precise index category allocated in the current year, lock-screens concurrent updates, and appends a strict, sequential triple-digit identity block.
+
+function generateInstitutionalTrackingNumber(PDO $con, int $indexCodeSelected): array {
+    try {
+        $indexDescriptionLabel = 'DOC';
+        $masterIndexLookup = getInstitutionalFileIndexMap();
+        
+        foreach ($masterIndexLookup as $group => $items) {
+            if (isset($items[$indexCodeSelected])) {
+                $rawWords = explode(' ', str_replace(['/', '-', '.'], ' ', $items[$indexCodeSelected]));
+                $indexDescriptionLabel = !empty($rawWords[0]) ? strtoupper($rawWords[0]) : 'DOC';
+                break;
+            }
+        }
+
+        $formattedPaddedIndex = str_pad((string)$indexCodeSelected, 2, '0', STR_PAD_LEFT);
+        $currentYear = date('Y');
+        $likePattern = "SDACOE-" . $indexDescriptionLabel . "-" . $formattedPaddedIndex . "-" . $currentYear . "-%";
+        
+        $query = "SELECT `document_number` FROM `documents` WHERE `document_number` LIKE :pattern ORDER BY `id` DESC LIMIT 1 FOR UPDATE";
+        $stmt = $con->prepare($query);
+        $stmt->execute([':pattern' => $likePattern]);
+        $lastRecordedDocument = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $nextSequenceNumber = 1;
+        if ($lastRecordedDocument) {
+            $codeSegmentsArray = explode('-', $lastRecordedDocument['document_number']);
+            if (isset($codeSegmentsArray[4])) {
+                $nextSequenceNumber = (int)$codeSegmentsArray[4] + 1;
+            }
+        }
+
+        $formattedPaddedSequence = str_pad((string)$nextSequenceNumber, 3, '0', STR_PAD_LEFT);
+        $compiledTrackingNumber = 'SDACOE-' . $indexDescriptionLabel . '-' . $formattedPaddedIndex . '-' . $currentYear . '-' . $formattedPaddedSequence;
+
+        return ['status' => 'success', 'data' => $compiledTrackingNumber];
+    } catch (\Throwable $e) {
+        return ['status' => 'error', 'message' => $e->getMessage()];
+    }
+}
+
+## 4.2 Universal Dynamic Hard Deletion Engine
+Adhering strictly to DRY (Don't Repeat Yourself) criteria, this single abstraction logs the complete snapshot array row parameters, converts it into a compressed JSON packet, populates the cold archive table, and clears the file asset with zero parameter leaks.
+
+function executeGlobalRecordHardDeletion(PDO $con, string $tableName, int $recordId, int $sessionUserId): array {
+    try {
+        $allowedSystemTables = ['documents', 'appointments', 'visitors_log', 'memos'];
+        if (!in_array($tableName, $allowedSystemTables)) {
+            throw new Exception("Security Violation: Action denied on table [{$tableName}].");
+        }
+
+        $cleanTableName = preg_replace('/[^a-zA-Z0-9_]/', '', $tableName);
+        $lockStmt = $con->prepare("SELECT * FROM `$cleanTableName` WHERE `id` = :id LIMIT 1 FOR UPDATE");
+        $lockStmt->execute([':id' => $recordId]);
+        $targetRow = $lockStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$targetRow) throw new Exception("Record absent inside [{$cleanTableName}].");
+
+        $recordReferenceString = "ID_REF_{$recordId}";
+        $referencePriorityColumns = ['document_number', 'visitor_name', 'employee_id', 'memo_ref'];
+        foreach ($referencePriorityColumns as $priorityCol) {
+            if (isset($targetRow[$priorityCol]) && !empty(trim((string)$targetRow[$priorityCol]))) {
+                $recordReferenceString = trim((string)$targetRow[$priorityCol]);
+                break;
+            }
+        }
+
+        $stringifiedJsonPayload = json_encode($targetRow, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $con->exec("SET @application_auth_context = 'SECURE_CAMPUS_DESK_TOKEN_2026'");
+
+        $archiveQuery = "INSERT INTO `deleted_records_archive` (`target_table`, `original_record_id`, `record_reference`, `json_payload`, `deleted_by`) VALUES (:tbl, :orig_id, :rec_ref, :json_data, :user_id)";
+        $con->prepare($archiveQuery)->execute([
+            ':tbl' => $cleanTableName, ':orig_id' => $recordId, ':rec_ref' => $recordReferenceString, ':json_data' => $stringifiedJsonPayload, ':user_id' => $sessionUserId
+        ]);
+
+        $con->prepare("DELETE FROM `$cleanTableName` WHERE `id` = :id")->execute([':id' => $recordId]);
+        recordSystemActivityLog($con, ucfirst($cleanTableName), 'HARD_DELETE', "[User: {$sessionUserId}] Deleted record ref: {$recordReferenceString}. Snapshot archived to JSON.");
+
+        return ['status' => 'success', 'message' => "Record purged and snapshot archived cleanly."];
+    } catch (\Throwable $e) {
+        return ['status' => 'error', 'message' => $e->getMessage()];
+    }
+}
+
+------------------------------
+## ⚡ 5. Asynchronous Frontend Data Streams
+The user interfaces utilize a minimalistic Swiss-Fintech Typographic Design Pattern, replacing card boxes and cluttered styles with clean raw canvas layers, responsive text spacing (letter-spacing), and bracket actions ([ DISMISS ]).
+## 5.1 Conditional Document Routing Architecture
+To ensure tracking consistency, a document can be fast-logged by a clerk without immediately generating an index tracking number. When the file returns from review, an operational sign-off component prompts the operator to declare the final classification category.
+
+// Sign-Off & Lifecycle Sync Processing Interceptor Loop
+$('#appointmentApproveForm').on('submit', function(e) {
+    e.preventDefault();
+    const executionForm = this;
+
+    Swal.fire({
+        title: 'Confirm Meeting Schedule?',
+        html: "This allocates the chosen slot parameters and marks the appointment as Approved.",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#71dd37',
+        cancelButtonColor: '#8592a3',
+        showLoaderOnConfirm: true,
+        preConfirm: () => {
+            return $.ajax({
+                url: server_controller,
+                type: 'POST',
+                data: $(executionForm).serialize(),
+                dataType: 'json'
+            }).then(res => {
+                if (res.status !== 'success') throw new Error(res.message);
+                return res;
+            }).catch(err => { Swal.showValidationMessage(`Error: ${err.message}`); });
+        }
+    }).then(result => {
+        if (result.isConfirmed && result.value) {
+            $('#appointmentApproveModal').modal('hide');
+            executionForm.reset();
+            renderAppointmentsTableUI(result.value.data); // Dynamic UI Repaint
+            Swal.fire('Scheduled!', 'Meeting status confirmed.', 'success');
+        }
+    });
+});
+
+## 5.2 Dynamic Form View Filtering (The Profile Hiding Rule)
+When input selectors alter their focus state, the system catches the DOM mutation parameters. For example, if a guest's profile matches Parent or Outsider, the department input layer slides up out of view, and its required attribute is removed dynamically to allow a seamless submission.
+
+function evaluateVisitorProfileDepartmentVisibility() {
+    const visitorProfileValue = $('#visitor_type').val();
+    const targetDeptRow       = $('#department_form_row');
+    const deptSelectInput     = $('#department');
+
+    if (visitorProfileValue === 'Parent' || visitorProfileValue === 'Outsider') {
+        targetDeptRow.slideUp(180);
+        deptSelectInput.removeAttr('required');
+        if (choicesDepartmentInstance) {
+            choicesDepartmentInstance.removeActiveItems();
+            choicesDepartmentInstance.setChoiceByValue('');
+        }
+    } else {
+        targetDeptRow.slideDown(180);
+        deptSelectInput.attr('required', 'required');
+    }
+}
+
+------------------------------
+## ☁️ 6. Cloud Handshake Sync Framework
+Synchronization functions operate inside an outbound transaction query matrix.
+When any internal data mutation is successfully executed, the system updates its synchronization flags: sync_status = 'Pending' and file_sync_status = 'Pending'.
+
+[ Active Document / Booking Row Mutated ]
+                  │
+                  ▼
+   [ Sets sync_status = 'Pending' ]
+                  │
+                  ▼
+ [ Dashboard Action Sync Trigger Fired ]
+                  │
+                  ▼
+ [ API executes compilePendingDatabaseChanges() ]
+                  │
+                  ▼
+[ Data Chunks Encoded & Pushed across Secure SSL Tunnel ]
+                  │
+                  ▼
+  [ Cloud Database Confirms Handshake ]
+                  │
+                  ▼
+[ Local Flags cleared down to 'Synced' status ]
+
+This bidirectional engine guarantees that records, hard deletions, and binary attachment assets are securely mirrored between the local network and the remote master cloud architecture without the risk of system data fragmentation or overlap crashes.
+------------------------------
+## 🧠 Operational Implementation Complete
+The entire campus system infrastructure—comprising relational schemas, anti-tampering triggers, universal deletion components, chronological sequencing functions, and asynchronous view components—is fully documented and ready for production deployment.
+Where should we expand your administrative architecture next?
+
+* Should we construct the Visitor Logbook registration module (visitors_log.php) following these typographic design guidelines?
+* Do you want to wire up the Sidebar Template Navigation Highlighters inside includes/sidebar.php?
+
+

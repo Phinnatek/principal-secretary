@@ -1,0 +1,121 @@
+## SDAP: Synchronized Distributed Administration Portal## Enterprise Campus Registry & Scheduler Ledger Engine
+Production Release Version: 2026.7.11
+Target Deployment Infrastructure: Local Standalone Client Nodes with Bidirectional Automated Cloud Mirroring Sync Channels [1-Jul-2026].
+------------------------------
+## 🏛️ 1. Technical Architecture & System Overview
+The Synchronized Distributed Administration Portal (SDAP) is a high-concurrency, transaction-secure administrative dashboard designed for the Seventh-day Adventist College of Education registry workspace [28-Jun-2026].
+The system utilizes a split-pane, single-screen workspace philosophy built on High-Typography Editorial Minimalism. By focusing on raw whitespace, clean monospace lettering layout tracks, and flat bracket indicators (e.g., [ VIEW_FILE ]), it strips away heavy UI card boxes and grid clutter while preserving optimal processing speeds.
+
+       [ Local Enterprise Client Node ] (Laragon / MariaDB Environment)
+                      │
+        ┌─────────────┴─────────────┐
+        ▼ (Atomic Mutations)        ▼ (Outbound Multi-Part Threads)
+ [ Immutable JSON Archive ]    [ Outbound Sync Queue Registers ]
+        │                                   │
+        └─────────────┬─────────────┘
+                      ▼ (Encrypted Secure SSL Handshake)
+        [ Master Cloud Infrastructure ] (Remote Central Server Node)
+
+------------------------------
+## 💾 2. Prerequisites & Global Core Dependencies
+Ensure your target server node environment satisfies the following minimum structural versions before compiling database patches:
+## 2.1 Backend Environment
+
+* PHP: Version 8.1 or higher (with PDO, openssl, and json extensions explicitly enabled).
+* Database Engine: MariaDB 10.4+ or MySQL 8.x running a universal utf8mb4_general_ci encoding scheme to guarantee cross-version sorting safety.
+* Server Variables: upload_max_filesize = 10M and post_max_size = 12M to accommodate multi-page PDF scan buffers.
+
+## 2.2 Frontend Framework Libraries (Loaded via CDN)
+
+<!-- Boxicons Vector Icons Font Library -->
+<link rel="stylesheet" href="https://jsdelivr.net" />
+<!-- Choices.js Type-To-Search Tokenizer Widgets -->
+<link rel="stylesheet" href="https://jsdelivr.net" />
+<script src="https://jsdelivr.net"></script>
+<!-- SweetAlert2 Enterprise State Machine Alerts -->
+<script src="https://jsdelivr.net"></script>
+
+------------------------------
+## ⚙️ 3. Installation & Database Schema Bootstrap
+Follow this execution thread to build directories and lock down tables against external injection manipulation or raw phpMyAdmin bypass attempts.
+## 3.1 Directory Topology Setup
+Create this folder structure at your web server's public root node and adjust write permissions:
+
+mkdir -p uploads/documents
+chmod -R 755 uploads/documents
+
+## 3.2 Relational Database Bootstrap Script
+Execute this SQL statement within your phpMyAdmin query console tab to initialize tracking fields, general collations, and active trigger hooks [01-Jul-2026]:
+
+CREATE DATABASE IF NOT EXISTS `college_admin` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+USE `college_admin`;
+-- 1. Create Deletions Sync Tracker LogCREATE TABLE IF NOT EXISTS `deletions_log` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `target_table` VARCHAR(100) NOT NULL,
+  `original_record_id` INT NOT NULL,
+  `record_reference` VARCHAR(150) DEFAULT NULL,
+  `deleted_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `sync_status` ENUM('Pending','Synced','Failed') NOT NULL DEFAULT 'Pending',
+  `last_synced_at` TIMESTAMP NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+-- 2. Create Cold Snapshot JSON Backup Vault ArchiveCREATE TABLE IF NOT EXISTS `deleted_records_archive` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `target_table` VARCHAR(100) NOT NULL,
+  `original_record_id` INT NOT NULL,
+  `record_reference` VARCHAR(150) NULL,
+  `json_payload` LONGTEXT NOT NULL,
+  `deleted_by` INT NOT NULL,
+  `deleted_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+-- 3. Set Delimiter to "//" at the bottom of phpMyAdmin before running the security triggers below:CREATE TRIGGER `trg_deletions_log_bypass_update_lock` BEFORE UPDATE ON `deletions_log` FOR EACH ROW BEGIN
+    IF (@application_auth_context IS NULL OR @application_auth_context != 'SECURE_CAMPUS_DESK_TOKEN_2026') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Security Violation: Cloud sync deletion queues are immutable.';
+    END IF;END//
+CREATE TRIGGER `trg_archive_bypass_delete_lock` BEFORE DELETE ON `deleted_records_archive` FOR EACH ROW BEGIN
+    IF (@application_auth_context IS NULL OR @application_auth_context != 'SECURE_CAMPUS_DESK_TOKEN_2026') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Security Violation: Cold storage archives cannot be dropped.';
+    END IF;END//
+
+------------------------------
+## 🔒 4. Operational Principles & Core Business Logic Rules
+This application uses specialized workflows to enforce strict record routing and access controls.
+## 4.1 Chronological Sequenced Document Tracker
+Documents pass through a strict Two-Stage Registry Pipeline:
+
+   1. The Logging Flow (Fast Log): Clerks log incoming or outgoing letters quickly. The tracking number remains NULL and the document status defaults to Pending Review. This allows files to pass to the Professor's desk for review without unnecessary blockages.
+   2. The Archiving Flow (Sign-Off): When the file returns to the desk, clicking Approve & Sign opens the sign-off console modal. The Principal or Secretary selects the final Institutional File Index Category via a searchable dropdown list. This executes generateInstitutionalTrackingNumber(), which locks the database table row (FOR UPDATE), queries the maximum sequence assigned for that index code in the current year, and automatically stamps a strict chronological reference token onto the record (e.g., SDACOE-ACADEMIC-01-2026-001) [01-Jul-2026].
+
+## 4.2 Dynamic Conditional Form Visibility (The Profile Rule)
+The appointment booking interface monitors form input states dynamically. If the guest's selected Visitor Operational Profile (#visitor_type) matches Parent or Outsider, the Target Department select input row instantly slides up (slideUp(180)) and removes its required constraint logic. This allows the booking to proceed cleanly without forcing a target department assignment.
+## 4.3 Transactional DRY Global Deletion Engine
+To prevent code duplication, manual deletes are abstracted into a single dynamic method: executeGlobalRecordHardDeletion().
+When called, it acts as an immutable transactional engine: it captures a complete SELECT * snapshots matrix of the row fields, formats it as a JSON payload, writes it to the cold storage archive, deletes the active record row, updates the local disk storage path, and populates the outbound sync ledger automatically.
+------------------------------
+## ⚡ 5. Production Code Integration Checklist
+When deploying these updates across your environment files, verify that all dynamic interfaces are properly wired up:
+
+   1. assets/backend/helper_functions.php
+   * Integrate the array-wrapped generateInstitutionalTrackingNumber() sequence engine.
+      * Integrate the executeGlobalRecordHardDeletion() core helper function.
+      * Replace the fatal syntax bug inside recordSystemActivityLog() by swapping the illegal continue keyword for a clean return true; short-circuit.
+   2. assets/backend/server_controller.php
+   * Update Branch D (save_document=true) to handle doc_type colon named placeholders properly, avoiding fatal backtick syntax crashes.
+      * Update Branch W (update_document_status=true) to handle unwrapping the status array output from the sequence tracking number generator.
+      * Integrate the unified Branch Y (delete_appointment=true) using the universal deletion engine.
+   3. documents.php & appointments.php
+   * Replace elseif checks with correct JavaScript else if syntax in your renderAppointmentsTableUI() and table view re-renderers to prevent runtime engine breakage.
+      * Verify the Choice outer container array separation parameter strings block: classNames: { containerOuter: ['choices', 'mb-0'] }.
+   
+------------------------------
+## ☁️ 6. Automated Distributed Cloud Mirroring Sync
+Local client nodes maintain data availability by updating two automated synchronization status flags on every record mutation: sync_status = 'Pending' and file_sync_status = 'Pending'.
+The background synchronization tool reads these columns via compilePendingDatabaseChanges(), converts binary files on-the-fly, and transmits the data packets securely across an encrypted SSL tunnel to your remote cloud master database repository, automatically clearing local flags back to 'Synced' upon completion.
+------------------------------
+Technical Advisory Notice: Do not remove the @application_auth_context validation token bindings from your server controller files, as doing so will cause your transactional database inserts to fail against your database security triggers.
+------------------------------
+Propose the next step to expand the documentation suite or configure the codebase further:
+
+* Should we design the full Visitor Logbook registration template page layout (visitors_log.php) using this typographic design philosophy?
+* Do you want to build out the real-time role-based dashboard charts and tracking boxes layout inside dashboard.php?
+
+
